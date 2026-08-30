@@ -155,6 +155,18 @@ class Board:
             cells.append(cell)
         
         return cells
+
+    def get_needed_letters(self, word, location, orientation):
+        x, y = location
+        needed = []
+        for i, letter in enumerate(word):
+            if orientation.upper() == 'H':
+                cell = self.grid[x][y + i]
+            elif orientation.upper() == 'V':
+                cell = self.grid[x + i][y]
+            if cell.letter is None:
+                needed.append(letter)
+        return needed
             
     def get_word_cells(self, word, location, orientation):
         word_cells = [] 
@@ -171,16 +183,15 @@ class Board:
     @staticmethod
     def calculate_word_value(word: list[Cell]) -> int:
         value: int = 0
-        multiplier_word = None
+        multiplier_word: int = 1
 
         for cell in word:
             value = value + cell.calculate_value()
             if cell.multiplier_type == "word" and cell.active:
-                multiplier_word = cell.multiplier
-                cell.active == False
-        if multiplier_word:
-            value = value * multiplier_word
-        return value
+                multiplier_word *= cell.multiplier
+                cell.active = False
+
+        return value * multiplier_word
         
                 
     def has_adjacent_horizontal_letter(self, x, y):

@@ -63,7 +63,9 @@ class ScrabbleGame:
     def play(self, word, location, orientation, rack):
 
         self.validate_word(word, location, orientation)
-        self.get_current_player().has_letters(word)
+        needed_letters = self.board.get_needed_letters(word, location, orientation)
+        if not self.get_current_player().has_letters(needed_letters):
+            raise InvalidPlaceWordException("No tienes las letras suficientes en tu atril")
         self.board.put_word(word, location, orientation, rack)
         word_cells = self.board.get_word_cells(word, location, orientation) 
         total_score = self.board.calculate_word_value(word_cells)

@@ -19,13 +19,12 @@ class Cell:
     def calculate_value(self):
         if self.letter is None:
             return 0
-        if self.multiplier_type == 'letter':
-            result = values.get(self.letter.letter) * self.multiplier
-            self.multiplier_type = None
+        tile_value = self.letter.value if hasattr(self.letter, 'value') else values.get(self.letter.letter, 0)
+        if self.active and self.multiplier_type == 'letter':
             self.active = False
-            return result
+            return tile_value * self.multiplier
         else:
-            return values.get(self.letter.letter, 0)
+            return tile_value
         
     def __repr__(self):
         if self.letter:
