@@ -17,7 +17,6 @@ class ScrabbleGame:
     def __init__(self, players_count):
         self.board = Board()
         self.bag_tiles = BagTiles()
-        self.player= Player()
         self.players = []
         for _ in range(players_count):
             self.players.append(Player(bag_tiles=self.bag_tiles))   
