@@ -1,14 +1,15 @@
 from game.tiles import BagTiles
-from game.tiles import BagTiles
 
 class NoJoker(Exception):
     pass
 
 class Player:
 
-    def __init__(self, bag_tiles=BagTiles()):
-        self.bag_tiles = BagTiles() 
-        self.tiles = bag_tiles.take(7)
+    def __init__(self, bag_tiles=None):
+        if bag_tiles is None:
+            bag_tiles = BagTiles()
+        self.bag_tiles = bag_tiles
+        self.tiles = self.bag_tiles.take(7)
         self.score = 0
     
     def rellenar(self):

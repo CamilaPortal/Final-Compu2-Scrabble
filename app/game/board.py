@@ -74,9 +74,12 @@ class Board:
             return True
         return False
 
-    def can_place_word_at_start(self, x, y, word):
-        if y <= 7 < y + len(word) and x == 7:
-            return True
+    def can_place_word_at_start(self, x, y, word, orientation):
+        orient = orientation.upper()
+        if orient == "H":
+            return x == 7 and (y <= 7 < y + len(word))
+        elif orient == "V":
+            return y == 7 and (x <= 7 < x + len(word))
         return False
 
     def validate_word_place_board_horizontal(self, word, location):
@@ -84,7 +87,7 @@ class Board:
         if not self.validate_word_inside_board(word, location, "H"):
             raise WordOutOfBoard(Exception)
         if self.is_empty():
-            return self.can_place_word_at_start(x, y, word)
+            return self.can_place_word_at_start(x, y, word, "H")
         elif self.is_empty() is False:
             for i in range(len(word)):
                 if self.grid[x][y + i].letter is not None:
@@ -97,7 +100,7 @@ class Board:
         if not self.validate_word_inside_board(word, location, "V"):
             raise WordOutOfBoard(Exception)
         if self.is_empty():
-            return self.can_place_word_at_start(y, x, word)
+            return self.can_place_word_at_start(x, y, word, "V")
         elif self.is_empty() is False:
             for i in range(len(word)):
                 if self.grid[x + i][y].letter is not None:
@@ -106,9 +109,10 @@ class Board:
             return True
 
     def validate_word_place_board(self, word, location, orientation):
-        if orientation == "H":
+        orient = orientation.upper()
+        if orient == "H":
             return self.validate_word_place_board_horizontal(word, location)
-        elif orientation == "V":
+        elif orient == "V":
             return self.validate_word_place_board_vertical(word, location)
         else:
             raise SoloVoHParaLaOrientacion(Exception)
@@ -137,21 +141,18 @@ class Board:
             elif orientation.upper() == 'V':
                 cell = self.grid[x + i][y]
             
-            # Buscar la letra en las fichas del jugador
+            # Si la casilla ya contiene una ficha previamente colocada en el tablero
+            if cell.letter is not None:
+                cells.append(cell)
+                continue
+            
+            # Buscar la ficha correspondiente en el atril del jugador
             tile = next((t for t in player_tiles if t.letter == letter), None)
             if tile:
-                value = tile.value
-            else:
-                value = 0  # Asignar un valor predeterminado si la letra no está en las fichas del jugador
+                cell.add_letter(tile)
+                player_tiles.remove(tile)
             
-            cell.add_letter(Tile(letter=letter, value=value))
             cells.append(cell)
-        
-        # Actualizar la lista de fichas del jugador después de jugar la palabra
-        for letter in word:
-            tile_to_remove = next((t for t in player_tiles if t.letter == letter), None)
-            if tile_to_remove:
-                player_tiles.remove(tile_to_remove)
         
         return cells
             
