@@ -15,20 +15,13 @@ class Player:
     def rellenar(self):
         self.tiles += self.bag_tiles.take(7 - len(self.tiles))
 
-    def has_letters(self, word):
-        player_tiles = self.tiles.copy()
-        word_letters_counts = {letter: word.count(letter) for letter in word}
-        
-        for letter, count in word_letters_counts.items():
-            found_tiles = [tile for tile in player_tiles if tile.letter == letter]
-            if len(found_tiles) < count:
+    def has_letters(self, letters):
+        player_letters = [tile.letter for tile in self.tiles]
+        for letter in letters:
+            if letter in player_letters:
+                player_letters.remove(letter)
+            else:
                 return False
-            
-            for _ in range(count):
-                player_tiles.remove(found_tiles.pop(0))
-        
-        self.tiles = player_tiles
-        
         return True
     
     def joker_in_tiles(self):
