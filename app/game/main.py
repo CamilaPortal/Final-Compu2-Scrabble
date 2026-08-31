@@ -2,6 +2,7 @@ from game.scrabble import ScrabbleGame, NoJoker
 from game.board import Board, SoloVoHParaLaOrientacion
 from game.cell import Cell
 from game.player import Player
+from client.ui import render_board, render_player_panel, render_menu, console
 
 class Main:
     def get_player_count(self):
@@ -16,16 +17,10 @@ class Main:
         return player_count
 
     def show_board(self, board):
-        print("   |  " + "  |  ".join(str(item) for item in range(10)) + "  | " + "  | ".join(str(item) for item in range(10, 15)) + " |")
-        print("   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _")
-        for i, row in enumerate(board.grid):
-            row_str = f"{i:2d} | " + " | ".join(repr(cell) for cell in row) + " |"
-            print(row_str)
-            print("   |_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _|")
+        render_board(board)
 
-            
-    def show_player(self, player_index, player):
-        print(f"Player #{player_index}:{player.tiles} score: {player.score}")
+    def show_player(self, player_index, player, bag_count=0):
+        render_player_panel(f"Jugador #{player_index}", player_index, player, bag_count)
 
     def get_location(self):
         while True:
@@ -68,12 +63,21 @@ class Main:
             print(f'Error: {e}')
 
     def joker(self, game):
-        if game.get_joker_index():
-            try:
-                letter = input("Ingrese la letra por la que desea cambiar el comodin: ")
-                game.convert_joker_to_letter(letter)
-            except Exception as e:
-                print(f'Error: No tiene joker')
+        current_player = game.get_current_player()
+        if not any(t.letter == '*' for t in current_player.tiles):
+            print("\nError: No tienes ningún comodín (*) en tu atril.")
+            return
+        
+        letter = input("Ingrese la letra por la que desea cambiar el comodín: ").strip().upper()
+        if not letter or not letter.isalpha() or len(letter) != 1:
+            print("Error: Ingrese una sola letra válida (A-Z).")
+            return
+        
+        try:
+            game.convert_joker_to_letter(letter)
+            print(f"Comodín (*) convertido a '{letter}' con valor 0 pts con éxito.")
+        except Exception as e:
+            print(f"Error: {e}")
 
     def change(self, game):
         if len(game.bag_tiles.tiles) < 7:
@@ -124,23 +128,17 @@ class Main:
         game = ScrabbleGame(players_count)
         menu_options = {
             '1': self.play_word,
-            '2': self.pass_turn,
+            '2': self.change,
             '3': self.joker,
-            '4': self.change,
+            '4': self.pass_turn,
             '5': self.end_game
         }
         while not game.finish_game():
             self.show_board(game.get_board())
-            self.show_player(game.current_player, game.get_current_player())
-            print("\nMenu:")
-            print("1. Jugar palabra")
-            print("2. Pasar turno")
-            print("3. cambiar comodin")
-            print("4. cambiar fichas")
-            print("5. Terminar juego")
-            print('-'*100)
+            self.show_player(game.current_player, game.get_current_player(), len(game.bag_tiles.tiles))
+            render_menu()
 
-            choice = input("Seleccione una opción: ")
+            choice = input("\nSeleccione una opción (1-5): ").strip()
 
             selected_option = menu_options.get(choice)
             if selected_option:
