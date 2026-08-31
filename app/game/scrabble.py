@@ -13,6 +13,9 @@ class InvalidPlaceWordException(Exception):
 class NoJoker(Exception):
     pass
 
+class CannotChangeTilesException(Exception):
+    pass
+
 class ScrabbleGame:
     def __init__(self, players_count):
         self.board = Board()
@@ -21,9 +24,14 @@ class ScrabbleGame:
         for _ in range(players_count):
             self.players.append(Player(bag_tiles=self.bag_tiles))   
         self.current_player = 0
+        self.consecutive_passes = 0
 
     def next_turn(self):
         self.current_player = (self.current_player + 1)% len(self.players)
+
+    def pass_turn(self):
+        self.consecutive_passes += 1
+        self.next_turn()
     
     def is_playing(self):
         return True
@@ -71,6 +79,33 @@ class ScrabbleGame:
         total_score = self.board.calculate_word_value(word_cells)
         self.players[self.current_player].score += total_score
         self.players[self.current_player].rellenar()
+        self.consecutive_passes = 0
+        self.next_turn()
+
+    def change_tiles(self, letters):
+        if len(self.bag_tiles.tiles) < 7:
+            raise CannotChangeTilesException("No se pueden cambiar fichas: deben quedar al menos 7 fichas en la bolsa.")
+        
+        if not (1 <= len(letters) <= 7):
+            raise CannotChangeTilesException("Debes seleccionar entre 1 y 7 fichas para cambiar.")
+        
+        current_player = self.get_current_player()
+        letters_upper = [l.upper() for l in letters]
+        
+        if not current_player.has_letters(letters_upper):
+            raise CannotChangeTilesException("No tienes esas letras en tu atril para cambiarlas.")
+        
+        tiles_to_put = []
+        for letter in letters_upper:
+            tile = next(t for t in current_player.tiles if t.letter == letter)
+            current_player.tiles.remove(tile)
+            tiles_to_put.append(tile)
+        
+        new_tiles = self.bag_tiles.take(len(tiles_to_put))
+        current_player.tiles.extend(new_tiles)
+        self.bag_tiles.put(tiles_to_put)
+        self.consecutive_passes = 0
+        
         self.next_turn()
 
     def compare_score(self):
@@ -87,6 +122,14 @@ class ScrabbleGame:
         return max_score_players
     
     def finish_game(self):
+        # Condición 1: Bolsa vacía y al menos un jugador sin fichas en su atril
         if len(self.bag_tiles.tiles) == 0:
+            for player in self.players:
+                if len(player.tiles) == 0:
+                    return True
+        
+        # Condición 2: Bloqueo - 2 rondas seguidas de pases (2 * cantidad de jugadores)
+        if self.consecutive_passes >= len(self.players) * 2:
             return True
+        
         return False

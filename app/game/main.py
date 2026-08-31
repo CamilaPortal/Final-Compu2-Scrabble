@@ -76,14 +76,33 @@ class Main:
                 print(f'Error: No tiene joker')
 
     def change(self, game):
+        if len(game.bag_tiles.tiles) < 7:
+            print("Error: No se pueden cambiar fichas. Deben quedar al menos 7 fichas en la bolsa.")
+            return
+        
         current_player = game.get_current_player()
-        player_tiles = current_player.tiles
-        game.bag_tiles.put(player_tiles)
-        new_tiles = game.bag_tiles.take(7)
-        current_player.tiles = new_tiles
+        print(f"Tus fichas disponibles: {[t.letter for t in current_player.tiles]}")
+        raw_input = input("Ingrese las letras que desea cambiar (ej: A B C o 'todas'): ").strip()
+        if not raw_input:
+            print("Operación cancelada: no ingresó letras.")
+            return
+        
+        if raw_input.lower() == "todas":
+            letters = [t.letter for t in current_player.tiles]
+        else:
+            if " " in raw_input:
+                letters = [l.strip().upper() for l in raw_input.split() if l.strip()]
+            else:
+                letters = [c.upper() for c in raw_input if c.isalpha() or c == "*"]
+        
+        try:
+            game.change_tiles(letters)
+            print(f"Fichas cambiadas con éxito. Pasa el turno al jugador #{game.current_player}")
+        except Exception as e:
+            print(f"Error: {e}")
 
     def pass_turn(self, game):
-        game.next_turn()
+        game.pass_turn()
 
     def end_game(self, game):
         winners = game.compare_score()
