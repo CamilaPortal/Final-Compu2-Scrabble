@@ -1,3 +1,8 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from game.scrabble import ScrabbleGame, NoJoker
 from game.board import Board, SoloVoHParaLaOrientacion
 from game.cell import Cell
