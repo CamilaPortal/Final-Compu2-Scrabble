@@ -67,7 +67,7 @@ class Board:
         elif orientation.upper() == "V":
             return self.validate_word_vertical(word, location)
         else:
-            raise SoloVoHParaLaOrientacion(Exception)
+            raise SoloVoHParaLaOrientacion("La orientación debe ser 'H' (Horizontal) o 'V' (Vertical)")
         
     def is_empty(self):
         if self.grid[7][7].letter is None:
@@ -85,7 +85,7 @@ class Board:
     def validate_word_place_board_horizontal(self, word, location):
         x, y = location
         if not self.validate_word_inside_board(word, location, "H"):
-            raise WordOutOfBoard(Exception)
+            raise WordOutOfBoard("La palabra excede los límites horizontales del tablero")
         if self.is_empty():
             return self.can_place_word_at_start(x, y, word, "H")
         elif self.is_empty() is False:
@@ -98,7 +98,7 @@ class Board:
     def validate_word_place_board_vertical(self, word, location):
         x, y = location
         if not self.validate_word_inside_board(word, location, "V"):
-            raise WordOutOfBoard(Exception)
+            raise WordOutOfBoard("La palabra excede los límites verticales del tablero")
         if self.is_empty():
             return self.can_place_word_at_start(x, y, word, "V")
         elif self.is_empty() is False:
@@ -115,7 +115,7 @@ class Board:
         elif orient == "V":
             return self.validate_word_place_board_vertical(word, location)
         else:
-            raise SoloVoHParaLaOrientacion(Exception)
+            raise SoloVoHParaLaOrientacion("La orientación debe ser 'H' (Horizontal) o 'V' (Vertical)")
         
     # def put_word(self, word, location, orientation):
     #     x, y = location
@@ -140,6 +140,8 @@ class Board:
                 cell = self.grid[x][y + i]
             elif orientation.upper() == 'V':
                 cell = self.grid[x + i][y]
+            else:
+                raise SoloVoHParaLaOrientacion("Orientación inválida. Por favor use 'H' o 'V'.")
             
             # Si la casilla ya contiene una ficha previamente colocada en el tablero
             if cell.letter is not None:
@@ -164,6 +166,8 @@ class Board:
                 cell = self.grid[x][y + i]
             elif orientation.upper() == 'V':
                 cell = self.grid[x + i][y]
+            else:
+                raise SoloVoHParaLaOrientacion("Orientación inválida. Por favor use 'H' o 'V'.")
             if cell.letter is None:
                 needed.append(letter)
         return needed

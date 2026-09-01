@@ -21,7 +21,7 @@ class Tile:
         if self.letter == "*":
             self.letter = new_letter
         else:
-            raise NoEsUnJoker(Exception)
+            raise NoEsUnJoker("La ficha seleccionada no es un comodín (*)")
         
     def __repr__(self):
         return f"{self.letter}:{self.value}"
@@ -46,7 +46,7 @@ class BagTiles:
     def take(self, count):
         tiles = []
         if len(self.tiles) == 0:
-            raise NoHayFichas(Exception)
+            raise NoHayFichas("No hay suficientes fichas en la bolsa")
         else:
             for _ in range(count):
                 tiles.append(self.tiles.pop())
@@ -54,9 +54,9 @@ class BagTiles:
         
     def put(self, tiles):
         if len(tiles) > 7:
-            raise ImposibleCambiarMasDe7(Exception)
+            raise ImposibleCambiarMasDe7("No se pueden cambiar más de 7 fichas")
         elif len(self.tiles) == 100:
-            raise BolsaLlena(Exception)
+            raise BolsaLlena("La bolsa de fichas ya está llena")
         else:
             self.tiles.extend(tiles)
             random.shuffle(self.tiles)
