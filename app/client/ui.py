@@ -8,7 +8,7 @@ console = Console()
 def render_board(board):
     """
     Renderiza el tablero 15x15 de Scrabble.
-    Acepta tanto un objeto Board como una matriz JSON (lista de listas).
+    Acepta tanto un objeto Board como una matriz JSON.
     """
     table = Table(
         box=box.SQUARE,
@@ -26,8 +26,12 @@ def render_board(board):
         else:
             table.add_column(f"{c} ", no_wrap=True)
 
-    # Detectar si es un objeto Board con atributo .grid o una matriz pura
-    grid = getattr(board, "grid", board)
+    if board is None:
+        return
+
+    grid = board.grid if hasattr(board, "grid") else board
+    if not grid:
+        return
 
     for r in range(15):
         if r < 10:
