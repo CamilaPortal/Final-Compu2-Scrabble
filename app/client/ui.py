@@ -5,11 +5,11 @@ from rich import box
 
 console = Console()
 
-def render_board(board):
-    """
-    Renderiza el tablero 15x15 de Scrabble.
-    Acepta tanto un objeto Board como una matriz JSON.
-    """
+def render_board(board_data: list):
+    """Renderiza el tablero 15x15 desde los datos JSON recibidos del servidor."""
+    if not board_data:
+        return
+
     table = Table(
         box=box.SQUARE,
         show_lines=True,
@@ -26,13 +26,6 @@ def render_board(board):
         else:
             table.add_column(f"{c} ", no_wrap=True)
 
-    if board is None:
-        return
-
-    grid = board.grid if hasattr(board, "grid") else board
-    if not grid:
-        return
-
     for r in range(15):
         if r < 10:
             row = [f" {r} "]
@@ -40,19 +33,11 @@ def render_board(board):
             row = [f"{r} "]
             
         for c in range(15):
-            cell = grid[r][c]
-            
-            # Obtener datos de la celda soportando objeto o diccionario
-            if hasattr(cell, "letter"):
-                letter_obj = cell.letter
-                letter_char = letter_obj.letter if letter_obj else None
-                m_type = getattr(cell, "multiplier_type", None)
-                m_val = getattr(cell, "multiplier", 1)
-            else:
-                letter_info = cell.get("letter")
-                letter_char = letter_info.get("letter") if letter_info else None
-                m_type = cell.get("multiplier_type")
-                m_val = cell.get("multiplier", 1)
+            cell = board_data[r][c]
+            letter_info = cell.get("letter")
+            letter_char = letter_info.get("letter") if letter_info else None
+            m_type = cell.get("multiplier_type")
+            m_val = cell.get("multiplier", 1)
 
             if letter_char is not None:
                 row.append(f"[bold black on white] {letter_char} [/]")
@@ -73,31 +58,13 @@ def render_board(board):
 
     console.print(table)
 
-def render_player_panel(player_name: str, player_index: int = 0, player_or_tiles=None, score: int = 0, bag_count: int = 0):
-    """
-    Renderiza el panel de información del jugador.
-    Acepta tanto un objeto Player como una lista de fichas o diccionarios JSON.
-    """
-    if hasattr(player_or_tiles, "tiles"):
-        # Es un objeto Player
-        tiles = getattr(player_or_tiles, "tiles", [])
-        final_score = getattr(player_or_tiles, "score", score)
-    else:
-        # Es una lista de diccionarios o tiles
-        tiles = player_or_tiles or []
-        final_score = score
-
-    rack_list = []
-    for t in tiles:
-        if hasattr(t, "letter") and hasattr(t, "value"):
-            rack_list.append(f"[bold black on white] {t.letter}:{t.value} [/]")
-        elif isinstance(t, dict):
-            rack_list.append(f"[bold black on white] {t.get('letter')}:{t.get('value')} [/]")
-
+def render_player_panel(player_name: str, player_index: int, tiles_data: list, score: int, bag_count: int):
+    """Renderiza el panel de información del jugador desde los datos JSON."""
+    rack_list = [f"[bold black on white] {t.get('letter')}:{t.get('value')} [/]" for t in (tiles_data or [])]
     rack_str = "  ".join(rack_list) if rack_list else "(Atril vacio)"
     
     content = (
-        f"Jugador: {player_name}  |  Puntaje: {final_score} pts  |  Fichas restantes en bolsa: {bag_count}\n\n"
+        f"Jugador: {player_name}  |  Puntaje: {score} pts  |  Fichas restantes en bolsa: {bag_count}\n\n"
         f"Atril actual:  {rack_str}"
     )
     console.print(Panel(content, title="INFORMACION DEL JUGADOR", box=box.SQUARE, title_align="left"))

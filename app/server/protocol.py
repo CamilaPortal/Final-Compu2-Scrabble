@@ -3,16 +3,17 @@ import asyncio
 from game.board import Board
 from game.tiles import Tile
 
-async def send_json(writer, data: dict):
+async def send_json(writer, data: dict) -> bool:
     """Envía un objeto serializado en JSON terminado con \n a través del stream."""
     try:
         if writer is None or writer.is_closing():
-            return
+            return False
         raw_msg = (json.dumps(data) + "\n").encode("utf-8")
         writer.write(raw_msg)
         await writer.drain()
+        return True
     except (ConnectionResetError, BrokenPipeError, OSError, asyncio.CancelledError):
-        pass
+        return False
 
 async def recv_json(reader, timeout: float | None = None) -> dict | None:
     """Lee una línea del stream y la deserializa como JSON. Soporta timeout opcional."""
@@ -27,7 +28,9 @@ async def recv_json(reader, timeout: float | None = None) -> dict | None:
         if not line:
             return None
         return json.loads(line.decode("utf-8").strip())
-    except (asyncio.TimeoutError, ConnectionResetError, BrokenPipeError, OSError, json.JSONDecodeError):
+    except asyncio.TimeoutError:
+        return {"_error_": "timeout"}
+    except (ConnectionResetError, BrokenPipeError, OSError, json.JSONDecodeError):
         return None
 
 def serialize_cell(cell) -> dict:
