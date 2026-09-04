@@ -22,7 +22,14 @@ class ScrabbleServer:
     async def on_room_game_start(self, room):
         player_names = [p.name for p in room.players]
         logger.info(f"[SALA #{room.room_id}] Partida iniciada con {len(room.players)} jugadores: {player_names}")
-        asyncio.create_task(run_game_loop(room))
+        asyncio.create_task(self._run_and_cleanup_room(room))
+
+    async def _run_and_cleanup_room(self, room):
+        try:
+            await run_game_loop(room)
+        finally:
+            await room.close_all_connections()
+            self.lobby.cleanup_room(room.room_id)
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr = writer.get_extra_info("peername")
@@ -56,19 +63,24 @@ class ScrabbleServer:
                 return
 
             # 3. Esperar a que la conexión termine sin tocar el reader (game_runner es el único lector)
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except (ConnectionResetError, BrokenPipeError, OSError, asyncio.CancelledError, GeneratorExit):
+                pass
 
-        except (ConnectionResetError, BrokenPipeError, asyncio.CancelledError):
+        except (ConnectionResetError, BrokenPipeError, OSError, asyncio.CancelledError, GeneratorExit):
             pass
         except Exception as e:
             logger.error(f"[ERROR] Conexión con {addr}: {e}")
         finally:
             if room is not None and player is not None and room.state in ("WAITING", "STARTING") and player in room.players:
                 logger.info(f"[LOBBY] Limpiando jugador desconectado '{player.name}' de Sala #{room.room_id}")
-                await room.remove_player(player)
+                try:
+                    await room.remove_player(player)
+                except (Exception, GeneratorExit):
+                    pass
             try:
                 writer.close()
-                await writer.wait_closed()
             except Exception:
                 pass
 

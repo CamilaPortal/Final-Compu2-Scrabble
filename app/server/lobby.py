@@ -122,6 +122,15 @@ class Room:
             except (ConnectionResetError, BrokenPipeError, OSError):
                 await self.remove_player(p)
 
+    async def close_all_connections(self):
+        for p in list(self.players):
+            try:
+                p.writer.close()
+                await p.writer.wait_closed()
+            except Exception:
+                pass
+        self.players.clear()
+
     async def broadcast_lobby_status(self):
         player_names = [p.name for p in self.players]
         await self.broadcast({
@@ -152,3 +161,14 @@ class LobbyManager:
 
     def get_room(self, room_id: int) -> Optional[Room]:
         return self.rooms.get(room_id)
+
+    def cleanup_room(self, room_id: int):
+        if room_id in self.rooms:
+            self.rooms.pop(room_id, None)
+            logger.info(f"[LOBBY] Sala #{room_id} liberada.")
+        
+        active_rooms = [r for r in self.rooms.values() if r.state != "FINISHED"]
+        if not active_rooms:
+            self.rooms.clear()
+            self.next_room_id = 1
+            logger.info("[LOBBY] No hay salas activas. Próxima sala reiniciada a #1.")
