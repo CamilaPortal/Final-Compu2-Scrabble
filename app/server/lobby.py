@@ -100,6 +100,9 @@ class Room:
             self.state = "WAITING"
             return
 
+        if self.countdown_task and not self.countdown_task.done():
+            self.countdown_task.cancel()
+
         self.state = "IN_GAME"
         player_names = [p.name for p in self.players]
         logger.info(f"[SALA #{self.room_id}] Partida iniciada oficialmente entre: {player_names}")

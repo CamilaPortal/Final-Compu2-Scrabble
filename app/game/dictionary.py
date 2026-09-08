@@ -15,5 +15,8 @@ def _load_dictionary():
     return _WORDS
 
 def validate_word(word):
+    cleaned = word.strip().upper() if word else ""
+    if len(cleaned) < 2:
+        return False
     words = _load_dictionary()
-    return word.strip().upper() in words
+    return cleaned in words
