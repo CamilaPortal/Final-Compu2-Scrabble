@@ -6,11 +6,13 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import multiprocessing
+import queue
 from typing import Optional
 from server.logger import logger
 from server.lobby import LobbyManager, Room
 from server.player_connection import ConnectedPlayer
-from server.game_runner import run_game_loop
+from server.room_process import run_room_process
 from server.protocol import recv_json, send_json
 
 class ScrabbleServer:
@@ -22,14 +24,100 @@ class ScrabbleServer:
     async def on_room_game_start(self, room):
         player_names = [p.name for p in room.players]
         logger.info(f"[SALA #{room.room_id}] Partida iniciada con {len(room.players)} jugadores: {player_names}")
-        asyncio.create_task(self._run_and_cleanup_room(room))
+        asyncio.create_task(self._run_room_multiprocess(room))
 
-    async def _run_and_cleanup_room(self, room):
+    async def _run_room_multiprocess(self, room: Room):
+        """
+        Administra el ciclo de vida del proceso hijo de la sala y el puente de red con los clientes.
+        """
+        mp_ctx = multiprocessing.get_context("spawn")
+        action_queue = mp_ctx.Queue()
+        event_queue = mp_ctx.Queue()
+
+        players_data = [{"id": p.player_id, "name": p.name} for p in room.players]
+        players_by_id = {p.player_id: p for p in room.players}
+
+        # Lanzar proceso hijo usando contexto spawn
+        proc = mp_ctx.Process(
+            target=run_room_process,
+            args=(room.room_id, players_data, action_queue, event_queue),
+            name=f"RoomProcess-{room.room_id}"
+        )
+        proc.start()
+        logger.info(f"[LOBBY] Proceso de Sala #{room.room_id} iniciado en proceso hijo con PID {proc.pid}")
+
+        # Tarea A: Leer de cada socket TCP y enviar acciones al proceso hijo por IPC
+        async def client_reader(p: ConnectedPlayer):
+            pid_fixed = p.player_id
+            name_fixed = p.name
+            try:
+                while True:
+                    msg = await recv_json(p.reader)
+                    if msg is None:
+                        logger.warning(f"[BRIDGE] Socket cerrado (EOF) de '{name_fixed}' (id={pid_fixed})")
+                        action_queue.put({"player_id": pid_fixed, "action_data": {"action": "disconnect"}})
+                        break
+                    action_queue.put({"player_id": pid_fixed, "action_data": msg})
+            except asyncio.CancelledError:
+                pass
+            except (ConnectionResetError, BrokenPipeError):
+                logger.warning(f"[BRIDGE] Conexión reseteada para '{name_fixed}' (id={pid_fixed})")
+                action_queue.put({"player_id": pid_fixed, "action_data": {"action": "disconnect"}})
+            except Exception as e:
+                logger.error(f"[SALA #{room.room_id}] Error leyendo socket de '{name_fixed}': {e}")
+                action_queue.put({"player_id": pid_fixed, "action_data": {"action": "disconnect"}})
+
+        reader_tasks = [asyncio.create_task(client_reader(p)) for p in room.players]
+
+        # Tarea B: Leer eventos del proceso hijo por IPC y transmitirlos a los sockets
         try:
-            await run_game_loop(room)
+            while True:
+                try:
+                    item = await asyncio.to_thread(event_queue.get, timeout=0.2)
+                except queue.Empty:
+                    if not proc.is_alive():
+                        break
+                    continue
+
+                target = item.get("target")
+                data = item.get("data", {})
+
+                if target == "internal" and data.get("event") == "room_finished":
+                    break
+
+                if target == "all":
+                    await room.broadcast(data)
+                elif isinstance(target, int) and target in players_by_id:
+                    p_target = players_by_id[target]
+                    await send_json(p_target.writer, data)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"[SALA #{room.room_id}] Error en despachador de eventos IPC: {e}")
         finally:
+            for t in reader_tasks:
+                t.cancel()
+
+            try:
+                await asyncio.to_thread(proc.join, timeout=3.0)
+                if proc.is_alive():
+                    proc.terminate()
+                    await asyncio.to_thread(proc.join)
+            except Exception:
+                pass
+
+            try:
+                action_queue.cancel_join_thread()
+                event_queue.cancel_join_thread()
+                action_queue.close()
+                event_queue.close()
+            except Exception:
+                pass
+
             await room.close_all_connections()
             self.lobby.cleanup_room(room.room_id)
+            logger.info(f"[LOBBY] Proceso de Sala #{room.room_id} (PID {proc.pid}) finalizado y recursos liberados.")
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         addr = writer.get_extra_info("peername")
@@ -62,7 +150,7 @@ class ScrabbleServer:
                 await writer.wait_closed()
                 return
 
-            # 3. Esperar a que la conexión termine sin tocar el reader (game_runner es el único lector)
+            # 3. Esperar a que la conexión termine sin tocar el reader (client_reader en _run_room_multiprocess es el lector)
             try:
                 await writer.wait_closed()
             except (ConnectionResetError, BrokenPipeError, OSError, asyncio.CancelledError, GeneratorExit):
