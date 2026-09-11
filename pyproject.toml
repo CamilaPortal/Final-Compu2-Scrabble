@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrabble"
+version = "1.0.0"
+description = "Scrabble multijugador cliente-servidor con Celery y Redis"
+requires-python = ">=3.10"
+dependencies = [
+    "rich==15.0.0",
+    "redis==8.1.0",
+    "celery==5.6.3",
+]
+
+[tool.setuptools.packages.find]
+where = ["app"]

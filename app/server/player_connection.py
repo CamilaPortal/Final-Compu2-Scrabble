@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from typing import Optional, Any
 
 @dataclass
 class ConnectedPlayer:
@@ -8,3 +9,4 @@ class ConnectedPlayer:
     writer: asyncio.StreamWriter
     player_id: int = 0
     room_id: int = 1
+    action_queue: Optional[Any] = None

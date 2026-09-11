@@ -247,7 +247,18 @@ def run_room_process(room_id: int, initial_players: list, action_queue: multipro
                     })
 
             elif action == "convert_joker":
-                letter = str(action_data.get("letter", "")).upper()
+                letter = str(action_data.get("letter", "")).strip().upper()
+                if len(letter) != 1 or not letter.isalpha():
+                    event_queue.put({
+                        "target": sender_id,
+                        "data": {
+                            "event": "action_result",
+                            "success": False,
+                            "message": "Error: Debe ingresar una única letra del alfabeto para el comodín."
+                        }
+                    })
+                    continue
+
                 try:
                     game.convert_joker_to_letter(letter)
                     logger.info(f"[PROCESO SALA #{room_id} (PID {pid})] '{current_player['name']}' convirtió comodín en '{letter}'")
@@ -259,11 +270,22 @@ def run_room_process(room_id: int, initial_players: list, action_queue: multipro
                             "message": f"Comodín convertido a '{letter}' con valor 0 pts."
                         }
                     })
+                    
+                    # Reenviar turn_info con el atril actualizado y el tiempo restante de su turno
+                    remaining_turn_sec = max(1, int(turn_timeout - (time.time() - turn_start_time)))
+                    scores = {active_players[i]["name"]: game.players[i].score for i in range(len(active_players))}
                     event_queue.put({
                         "target": sender_id,
                         "data": {
-                            "event": "rack_update",
-                            "rack": serialize_tiles(current_player_game.tiles)
+                            "event": "turn_info",
+                            "board": serialize_board(game.board),
+                            "rack": serialize_tiles(current_player_game.tiles),
+                            "scores": scores,
+                            "bag_count": len(game.bag_tiles.tiles),
+                            "current_player_name": current_player["name"],
+                            "current_player_id": current_player["id"],
+                            "is_your_turn": True,
+                            "remaining_seconds": remaining_turn_sec
                         }
                     })
                 except Exception as e:

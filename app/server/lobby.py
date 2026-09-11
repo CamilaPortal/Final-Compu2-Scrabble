@@ -13,6 +13,7 @@ class Room:
         self.countdown_task: Optional[asyncio.Task] = None
         self.on_game_start_callback = on_game_start_callback
         self.countdown_seconds = 30
+        self.started_event = asyncio.Event()
 
     @property
     def is_available(self) -> bool:
@@ -80,6 +81,8 @@ class Room:
     async def _run_countdown(self, seconds: int):
         try:
             for remaining in range(seconds, 0, -1):
+                if self.state != "STARTING" or len(self.players) < 2:
+                    break
                 if remaining in (30, 20, 15, 10, 5, 4, 3, 2, 1):
                     logger.info(f"[SALA #{self.room_id}] Cuenta regresiva: {remaining}s restantes...")
                     await self.broadcast({
@@ -104,6 +107,7 @@ class Room:
             self.countdown_task.cancel()
 
         self.state = "IN_GAME"
+        self.started_event.set()
         player_names = [p.name for p in self.players]
         logger.info(f"[SALA #{self.room_id}] Partida iniciada oficialmente entre: {player_names}")
         await self.broadcast({

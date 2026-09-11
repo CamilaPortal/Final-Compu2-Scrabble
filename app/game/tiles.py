@@ -45,12 +45,10 @@ class BagTiles:
     
     def take(self, count):
         tiles = []
-        if len(self.tiles) == 0:
-            raise NoHayFichas("No hay suficientes fichas en la bolsa")
-        else:
-            for _ in range(count):
-                tiles.append(self.tiles.pop())
-            return tiles
+        take_count = max(0, min(count, len(self.tiles)))
+        for _ in range(take_count):
+            tiles.append(self.tiles.pop())
+        return tiles
         
     def put(self, tiles):
         if len(tiles) > 7:
