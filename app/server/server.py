@@ -3,9 +3,6 @@ import asyncio
 import os
 import socket
 import sys
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 import multiprocessing
 import queue
 from typing import Optional
@@ -46,28 +43,9 @@ class ScrabbleServer:
         proc.start()
         logger.info(f"[LOBBY] Proceso de Sala #{room.room_id} iniciado en proceso hijo con PID {proc.pid}")
 
-        # Tarea A: Leer de cada socket TCP y enviar acciones al proceso hijo por IPC
-        async def client_reader(p: ConnectedPlayer):
-            pid_fixed = p.player_id
-            name_fixed = p.name
-            try:
-                while True:
-                    msg = await recv_json(p.reader)
-                    if msg is None:
-                        logger.warning(f"[BRIDGE] Socket cerrado (EOF) de '{name_fixed}' (id={pid_fixed})")
-                        action_queue.put({"player_id": pid_fixed, "action_data": {"action": "disconnect"}})
-                        break
-                    action_queue.put({"player_id": pid_fixed, "action_data": msg})
-            except asyncio.CancelledError:
-                pass
-            except (ConnectionResetError, BrokenPipeError):
-                logger.warning(f"[BRIDGE] Conexión reseteada para '{name_fixed}' (id={pid_fixed})")
-                action_queue.put({"player_id": pid_fixed, "action_data": {"action": "disconnect"}})
-            except Exception as e:
-                logger.error(f"[SALA #{room.room_id}] Error leyendo socket de '{name_fixed}': {e}")
-                action_queue.put({"player_id": pid_fixed, "action_data": {"action": "disconnect"}})
-
-        reader_tasks = [asyncio.create_task(client_reader(p)) for p in room.players]
+        # Asignar la cola de acciones a cada jugador para que handle_client transmita las jugadas por IPC
+        for p in room.players:
+            p.action_queue = action_queue
 
         # Tarea B: Leer eventos del proceso hijo por IPC y transmitirlos a los sockets
         try:
@@ -96,8 +74,8 @@ class ScrabbleServer:
         except Exception as e:
             logger.error(f"[SALA #{room.room_id}] Error en despachador de eventos IPC: {e}")
         finally:
-            for t in reader_tasks:
-                t.cancel()
+            for p in room.players:
+                p.action_queue = None
 
             try:
                 await asyncio.to_thread(proc.join, timeout=3.0)
@@ -150,25 +128,49 @@ class ScrabbleServer:
                 await writer.wait_closed()
                 return
 
-            # 3. Esperar a que la conexión termine sin tocar el reader (client_reader en _run_room_multiprocess es el lector)
-            try:
-                await writer.wait_closed()
-            except (ConnectionResetError, BrokenPipeError, OSError, asyncio.CancelledError, GeneratorExit):
-                pass
+            # 3. Bucle único de lectura de red para este cliente durante toda su sesión
+            while True:
+                msg = await recv_json(reader)
+                if msg is None:
+                    if room is not None and room.state in ("WAITING", "STARTING"):
+                        logger.info(f"[LOBBY] Cliente '{player_name}' se desconectó del lobby.")
+                        await room.remove_player(player)
+                    elif player.action_queue is not None:
+                        logger.warning(f"[BRIDGE] Socket cerrado (EOF) de '{player_name}' (id={player.player_id})")
+                        player.action_queue.put({
+                            "player_id": player.player_id,
+                            "action_data": {"action": "disconnect"}
+                        })
+                    break
 
-        except (ConnectionResetError, BrokenPipeError, OSError, asyncio.CancelledError, GeneratorExit):
+                if player.action_queue is not None:
+                    player.action_queue.put({
+                        "player_id": player.player_id,
+                        "action_data": msg
+                    })
+
+        except (ConnectionResetError, BrokenPipeError):
+            if room is not None and room.state in ("WAITING", "STARTING"):
+                logger.info(f"[LOBBY] Conexión reseteada para '{player_name}' en el lobby.")
+                await room.remove_player(player)
+            elif player is not None and player.action_queue is not None:
+                player.action_queue.put({
+                    "player_id": player.player_id,
+                    "action_data": {"action": "disconnect"}
+                })
+        except asyncio.CancelledError:
             pass
         except Exception as e:
             logger.error(f"[ERROR] Conexión con {addr}: {e}")
         finally:
             if room is not None and player is not None and room.state in ("WAITING", "STARTING") and player in room.players:
-                logger.info(f"[LOBBY] Limpiando jugador desconectado '{player.name}' de Sala #{room.room_id}")
                 try:
                     await room.remove_player(player)
-                except (Exception, GeneratorExit):
+                except Exception:
                     pass
             try:
                 writer.close()
+                await writer.wait_closed()
             except Exception:
                 pass
 

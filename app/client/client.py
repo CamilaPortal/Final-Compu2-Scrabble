@@ -5,10 +5,7 @@ import os
 import sys
 import termios
 
-try:
-    from client.ui import render_board, render_player_panel, render_menu, console
-except (ImportError, ModuleNotFoundError):
-    from ui import render_board, render_player_panel, render_menu, console  # type: ignore
+from client.ui import render_board, render_player_panel, render_menu, console
 
 from rich.panel import Panel
 from rich import box
@@ -174,7 +171,8 @@ class ScrabbleClient:
                     render_player_panel(self.name, self.player_id, self.my_tiles, self.my_score, bag_count)
 
                     if self.is_my_turn:
-                        console.print("[bold green]¡ES TU TURNO! (Tenés 60 segundos)[/bold green]")
+                        rem_sec = msg.get("remaining_seconds", 60)
+                        console.print(f"[bold green]¡ES TU TURNO! (Tenés {rem_sec} segundos)[/bold green]")
                         self.trigger_turn_prompt(writer)
                     else:
                         self.cancel_current_prompt()
@@ -260,8 +258,13 @@ class ScrabbleClient:
                     if self.is_my_turn:
                         self.trigger_turn_prompt(writer)
                     return
-                letter = (await self.stdin_reader.readline("Ingrese la letra por la que desea cambiar el comodín: ")).upper()
-                await send_json(writer, {"action": "convert_joker", "letter": letter})
+                letter_input = (await self.stdin_reader.readline("Ingrese la letra por la que desea cambiar el comodín: ")).strip().upper()
+                if len(letter_input) != 1 or not letter_input.isalpha():
+                    console.print("[red]Error: Debe ingresar una única letra válida.[/red]")
+                    if self.is_my_turn:
+                        self.trigger_turn_prompt(writer)
+                    return
+                await send_json(writer, {"action": "convert_joker", "letter": letter_input})
 
             elif choice == "4":
                 await send_json(writer, {"action": "pass"})

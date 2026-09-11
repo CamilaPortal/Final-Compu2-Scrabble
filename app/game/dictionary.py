@@ -1,22 +1,19 @@
-import os
+from celery.exceptions import TimeoutError as CeleryTimeoutError
+from tasks.word_tasks import validate_word_task
 
-DICTIONARY_PATH = os.path.join(os.path.dirname(__file__), "dictionary.txt")
-
-_WORDS = None
-
-def _load_dictionary():
-    global _WORDS
-    if _WORDS is None:
-        _WORDS = set()
-        if os.path.exists(DICTIONARY_PATH):
-            with open(DICTIONARY_PATH, "r", encoding="utf-8") as f:
-                for line in f:
-                    _WORDS.add(line.strip().upper())
-    return _WORDS
-
-def validate_word(word):
+def validate_word(word: str) -> bool:
+    """
+    Valida la palabra usando la tarea distribuida de Celery en Redis.
+    """
     cleaned = word.strip().upper() if word else ""
     if len(cleaned) < 2:
         return False
-    words = _load_dictionary()
-    return cleaned in words
+
+    try:
+        task = validate_word_task.delay(cleaned)
+        return bool(task.get(timeout=4.0))
+    except CeleryTimeoutError:
+        raise RuntimeError(
+            "El Worker de Celery no responde. "
+            "Asegúrese de tenerlo corriendo en una terminal con: celery -A tasks.celery_app worker --loglevel=info"
+        )

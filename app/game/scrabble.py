@@ -49,13 +49,18 @@ class ScrabbleGame:
         word = word.upper()
         if not validate_word_dict(word):
             raise InvalidWord("No existe la palabra")
-        elif not self.board.validate_word_inside_board(word, location, orientation):
+        if not self.board.validate_word_inside_board(word, location, orientation):
             raise InvalidPlaceWordException("No es correcta la ubicación")
-        elif not self.board.is_empty():
+        if self.board.is_empty():
+            if not self.board.validate_word_place_board(word, location, orientation):
+                raise InvalidPlaceWordException("La primera palabra debe pasar por el centro del tablero (casilla 7, 7)")
+        else:
+            if not self.board.validate_word_place_board(word, location, orientation):
+                raise InvalidPlaceWordException("Las letras no coinciden con las fichas existentes en el tablero")
             if not self.board.is_valid_crossword(word, location, orientation):
                 raise InvalidPlaceWordException("La palabra debe estar cruzada")
-        elif not self.board.validate_word_place_board(word, location, orientation):
-            raise InvalidPlaceWordException("No se puede colocar")
+            if len(self.board.get_needed_letters(word, location, orientation)) == 0:
+                raise InvalidPlaceWordException("Debes colocar al menos una ficha de tu atril")
         
     def convert_joker_to_letter(self, letter):
         current_player = self.get_current_player()
@@ -72,6 +77,8 @@ class ScrabbleGame:
 
         self.validate_word(word, location, orientation)
         needed_letters = self.board.get_needed_letters(word, location, orientation)
+        if len(needed_letters) == 0:
+            raise InvalidPlaceWordException("Debes colocar al menos una ficha de tu atril")
         if not self.get_current_player().has_letters(needed_letters):
             raise InvalidPlaceWordException("No tienes las letras suficientes en tu atril")
         self.board.put_word(word, location, orientation, rack)
