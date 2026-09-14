@@ -5,10 +5,16 @@ import os
 import sys
 import termios
 
-from client.ui import render_board, render_player_panel, render_menu, console
-
-from rich.panel import Panel
+from client.ui import (
+    render_board,
+    render_menu,
+    render_player_panel,
+    render_ranking,
+    render_welcome_menu,
+    console,
+)
 from rich import box
+from rich.panel import Panel
 
 async def send_json(writer, data: dict):
     """Envía un diccionario serializado en JSON terminado en \n."""
@@ -71,6 +77,30 @@ class StdinReader:
         finally:
             self.future = None
 
+    async def read_password(self, prompt: str = "") -> str:
+        """Lee una contraseña ocultando el eco en la terminal sin competir con asyncio."""
+        fd = sys.stdin.fileno()
+        old_settings = None
+        try:
+            old_settings = termios.tcgetattr(fd)
+            new_settings = termios.tcgetattr(fd)
+            new_settings[3] = new_settings[3] & ~termios.ECHO
+            termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
+        except Exception:
+            pass
+
+        try:
+            val = await self.readline(prompt)
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return val
+        finally:
+            if old_settings:
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                except Exception:
+                    pass
+
     def close(self):
         if self._registered:
             try:
@@ -81,8 +111,9 @@ class StdinReader:
             self._registered = False
 
 class ScrabbleClient:
-    def __init__(self, name: str, host: str = "127.0.0.1", port: int = 5000):
+    def __init__(self, name: str = "", password: str = "", host: str = "127.0.0.1", port: int = 5000):
         self.name = name
+        self.password = password
         self.host = host
         self.port = port
         self.player_id = 0
@@ -93,6 +124,92 @@ class ScrabbleClient:
         self.turn_action_task = None
         self.stdin_reader = StdinReader()
 
+    async def authenticate_or_menu(self, reader, writer) -> bool:
+        """Gestiona el menú previo de login, registro o ranking antes de entrar al lobby."""
+        # Intento de login automático si se pasaron usuario y contraseña por CLI
+        if self.name and self.password:
+            console.print(f"[cyan]Intentando autenticación automática para '{self.name}'...[/cyan]")
+            await send_json(writer, {"action": "login", "username": self.name, "password": self.password})
+            resp = await recv_json(reader, timeout=10)
+            if resp and resp.get("event") == "auth_success":
+                self.name = resp.get("username", self.name)
+                console.print(f"[bold green]{resp.get('message', 'Autenticación exitosa.')}[/bold green]\n")
+                return True
+            else:
+                err_msg = resp.get("message", "Error de credenciales.") if resp else "Sin respuesta del servidor."
+                console.print(f"[bold red]{err_msg}[/bold red]")
+                console.print("[yellow]Accediendo al menú interactivo...[/yellow]\n")
+
+        while True:
+            render_welcome_menu()
+            choice = (await self.stdin_reader.readline("Seleccione una opción (1-5): ")).strip()
+
+            if choice == "1":
+                username = (await self.stdin_reader.readline("Usuario: ")).strip()
+                if not username:
+                    console.print("[red]El usuario no puede estar vacío.[/red]\n")
+                    continue
+                pwd = (await self.stdin_reader.read_password("Contraseña: ")).strip()
+                await send_json(writer, {"action": "login", "username": username, "password": pwd})
+                resp = await recv_json(reader, timeout=10)
+                if resp and resp.get("event") == "auth_success":
+                    self.name = resp.get("username", username)
+                    console.print(f"\n[bold green]{resp.get('message', 'Bienvenido!')}[/bold green]\n")
+                    return True
+                else:
+                    err = resp.get("message", "Error al iniciar sesión.") if resp else "Sin respuesta del servidor."
+                    console.print(f"\n[bold red]{err}[/bold red]\n")
+
+            elif choice == "2":
+                username = (await self.stdin_reader.readline("Nuevo usuario (3-20 caracteres): ")).strip()
+                if not username:
+                    console.print("[red]El usuario no puede estar vacío.[/red]\n")
+                    continue
+                pwd = (await self.stdin_reader.read_password("Contraseña (mínimo 4 caracteres): ")).strip()
+                pwd2 = (await self.stdin_reader.read_password("Confirme contraseña: ")).strip()
+                if pwd != pwd2:
+                    console.print("\n[bold red]Las contraseñas no coinciden.[/bold red]\n")
+                    continue
+
+                await send_json(writer, {"action": "register", "username": username, "password": pwd})
+                resp = await recv_json(reader, timeout=10)
+                if resp and resp.get("event") == "auth_success":
+                    self.name = resp.get("username", username)
+                    console.print(f"\n[bold green]{resp.get('message', 'Registro exitoso!')}[/bold green]\n")
+                    return True
+                else:
+                    err = resp.get("message", "Error al registrarse.") if resp else "Sin respuesta del servidor."
+                    console.print(f"\n[bold red]{err}[/bold red]\n")
+
+            elif choice == "3":
+                await send_json(writer, {"action": "get_ranking"})
+                resp = await recv_json(reader, timeout=10)
+                if resp and resp.get("event") == "ranking_data":
+                    render_ranking(resp.get("ranking", []))
+                else:
+                    console.print("[red]No se pudo obtener el ranking del servidor.[/red]")
+                await self.stdin_reader.readline("\nPresione Enter para volver al menú principal...")
+                console.print()
+
+            elif choice == "4":
+                guest_name = (await self.stdin_reader.readline("Nombre o alias [Invitado]: ")).strip() or "Invitado"
+                await send_json(writer, {"action": "join", "name": guest_name})
+                resp = await recv_json(reader, timeout=10)
+                if resp and resp.get("event") == "auth_success":
+                    self.name = resp.get("username", guest_name)
+                    console.print(f"\n[bold green]{resp.get('message', 'Bienvenido!')}[/bold green]\n")
+                    return True
+                else:
+                    err = resp.get("message", "Error al ingresar.") if resp else "Sin respuesta del servidor."
+                    console.print(f"\n[bold red]{err}[/bold red]\n")
+
+            elif choice == "5":
+                console.print("\n[bold yellow]Saliendo de Scrabble...[/bold yellow]")
+                return False
+
+            else:
+                console.print("[red]Opción inválida. Seleccione entre 1 y 5.[/red]\n")
+
     async def run(self):
         console.print(f"[bold cyan]Conectando al servidor Scrabble en {self.host}:{self.port}...[/bold cyan]")
         try:
@@ -101,8 +218,14 @@ class ScrabbleClient:
             console.print(f"[bold red]Error al conectar con el servidor: {e}[/bold red]")
             return
 
-        # 1. Enviar handshake de bienvenida
-        await send_json(writer, {"action": "join", "name": self.name})
+        authenticated = await self.authenticate_or_menu(reader, writer)
+        if not authenticated:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+            return
 
         # 2. Bucle principal de eventos de red
         try:
@@ -284,12 +407,13 @@ class ScrabbleClient:
 
 def main():
     parser = argparse.ArgumentParser(description="Cliente de Scrabble Multijugador")
-    parser.add_argument("--name", "-n", default="Jugador", help="Nombre o alias del jugador")
+    parser.add_argument("--name", "-n", "--user", "-u", default="", help="Nombre o alias del jugador")
+    parser.add_argument("--password", "-P", default="", help="Contraseña del usuario (opcional)")
     parser.add_argument("--host", "-H", default="127.0.0.1", help="IP del servidor (default: 127.0.0.1)")
     parser.add_argument("--port", "-p", type=int, default=5000, help="Puerto del servidor (default: 5000)")
     args = parser.parse_args()
 
-    client = ScrabbleClient(name=args.name, host=args.host, port=args.port)
+    client = ScrabbleClient(name=args.name, password=args.password, host=args.host, port=args.port)
     try:
         asyncio.run(client.run())
     except (KeyboardInterrupt, SystemExit):

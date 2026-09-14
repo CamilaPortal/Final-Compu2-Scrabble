@@ -5,7 +5,16 @@ import socket
 import sys
 import multiprocessing
 import queue
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Dict, Optional
+
+from database import (
+    init_db,
+    register_user,
+    authenticate_user,
+    save_finished_game,
+    get_top_players,
+)
 from server.logger import logger
 from server.lobby import LobbyManager, Room
 from server.player_connection import ConnectedPlayer
@@ -16,6 +25,8 @@ class ScrabbleServer:
     def __init__(self, host: str = "0.0.0.0", port: int = 5000):
         self.host = host
         self.port = port
+        init_db()
+        self.active_sessions: Dict[str, Optional[ConnectedPlayer]] = {}
         self.lobby = LobbyManager(on_game_start_callback=self.on_room_game_start)
 
     async def on_room_game_start(self, room):
@@ -31,7 +42,8 @@ class ScrabbleServer:
         action_queue = mp_ctx.Queue()
         event_queue = mp_ctx.Queue()
 
-        players_data = [{"id": p.player_id, "name": p.name} for p in room.players]
+        started_at = datetime.now()
+        players_data = [{"id": p.player_id, "name": p.name, "user_id": p.user_id} for p in room.players]
         players_by_id = {p.player_id: p for p in room.players}
 
         # Lanzar proceso hijo usando contexto spawn
@@ -59,6 +71,24 @@ class ScrabbleServer:
 
                 target = item.get("target")
                 data = item.get("data", {})
+
+                if data.get("event") == "game_over":
+                    finished_at = datetime.now()
+                    duration_seconds = max(1, int((finished_at - started_at).total_seconds()))
+                    try:
+                        await asyncio.to_thread(
+                            save_finished_game,
+                            room.room_id,
+                            started_at,
+                            finished_at,
+                            duration_seconds,
+                            players_data,
+                            data.get("final_scores", {}),
+                            data.get("winners", []),
+                        )
+                        logger.info(f"[SALA #{room.room_id}] Partida guardada exitosamente en la base de datos.")
+                    except Exception as dbe:
+                        logger.error(f"[SALA #{room.room_id}] Error al guardar partida en base de datos: {dbe}")
 
                 if target == "internal" and data.get("event") == "room_finished":
                     break
@@ -102,21 +132,107 @@ class ScrabbleServer:
         logger.info(f"[CONEXIÓN] Cliente conectado desde {addr}")
         player: Optional[ConnectedPlayer] = None
         room: Optional[Room] = None
+        session_key: Optional[str] = None
+        player_name: str = "Jugador"
 
         try:
-            # 1. Esperar mensaje de join inicial
-            join_msg = await recv_json(reader, timeout=15)
-            if not join_msg or join_msg.get("action") != "join":
-                logger.warning(f"[CONEXIÓN] Handshake inválido desde {addr}")
-                await send_json(writer, {"event": "error", "message": "Handshake invalido. Debe enviar action: join"})
-                writer.close()
-                await writer.wait_closed()
-                return
+            # 1. Bucle de autenticación y menú previo al ingreso al lobby
+            authenticated_user = None
+            while True:
+                msg = await recv_json(reader)
+                if msg is None:
+                    logger.info(f"[CONEXIÓN] Cliente {addr} desconectado antes de autenticarse.")
+                    return
 
-            player_name = str(join_msg.get("name", "Jugador")).strip() or "Jugador"
-            player = ConnectedPlayer(name=player_name, reader=reader, writer=writer)
+                action = msg.get("action")
 
-            # 2. Asignar a sala disponible
+                if action == "register":
+                    u_name = str(msg.get("username", "")).strip()
+                    u_pass = str(msg.get("password", ""))
+                    ok, message, u_data = await asyncio.to_thread(register_user, u_name, u_pass)
+                    if ok:
+                        logger.info(f"[AUTH] Usuario '{u_name}' registrado exitosamente desde {addr}")
+                        session_key = u_name.lower()
+                        if session_key in self.active_sessions:
+                            await send_json(writer, {"event": "auth_error", "message": "Esta cuenta ya tiene una sesión activa."})
+                            session_key = None
+                            continue
+                        self.active_sessions[session_key] = None
+                        authenticated_user = u_data
+                        await send_json(writer, {
+                            "event": "auth_success",
+                            "message": message,
+                            "username": u_data["username"],
+                            "user_id": u_data["id"],
+                        })
+                        break
+                    else:
+                        logger.warning(f"[AUTH] Falló registro para '{u_name}' desde {addr}: {message}")
+                        await send_json(writer, {"event": "auth_error", "message": message})
+
+                elif action == "login":
+                    u_name = str(msg.get("username", "")).strip()
+                    u_pass = str(msg.get("password", ""))
+                    s_key = u_name.lower()
+                    if s_key in self.active_sessions:
+                        logger.warning(f"[AUTH] Intento de doble sesión para '{u_name}' desde {addr}")
+                        await send_json(writer, {"event": "auth_error", "message": f"La cuenta '{u_name}' ya tiene una sesión activa en el servidor."})
+                        continue
+
+                    ok, message, u_data = await asyncio.to_thread(authenticate_user, u_name, u_pass)
+                    if ok:
+                        logger.info(f"[AUTH] Usuario '{u_name}' autenticado exitosamente desde {addr}")
+                        session_key = s_key
+                        self.active_sessions[session_key] = None
+                        authenticated_user = u_data
+                        await send_json(writer, {
+                            "event": "auth_success",
+                            "message": message,
+                            "username": u_data["username"],
+                            "user_id": u_data["id"],
+                        })
+                        break
+                    else:
+                        logger.warning(f"[AUTH] Credenciales inválidas para '{u_name}' desde {addr}")
+                        await send_json(writer, {"event": "auth_error", "message": message})
+
+                elif action == "get_ranking":
+                    ranking = await asyncio.to_thread(get_top_players, 10)
+                    await send_json(writer, {
+                        "event": "ranking_data",
+                        "ranking": ranking,
+                    })
+
+                elif action == "join":
+                    u_name = str(msg.get("name", "Jugador")).strip() or "Jugador"
+                    s_key = u_name.lower()
+                    if s_key in self.active_sessions:
+                        await send_json(writer, {"event": "auth_error", "message": f"El nombre '{u_name}' ya está en uso en el servidor."})
+                        continue
+                    session_key = s_key
+                    self.active_sessions[session_key] = None
+                    authenticated_user = {"id": None, "username": u_name}
+                    await send_json(writer, {
+                        "event": "auth_success",
+                        "message": f"Bienvenido, {u_name}",
+                        "username": u_name,
+                        "user_id": None,
+                    })
+                    break
+                else:
+                    await send_json(writer, {"event": "auth_error", "message": "Acción no reconocida."})
+
+            # 2. Asignar a sala disponible en el lobby
+            player_name = authenticated_user["username"]
+            player = ConnectedPlayer(
+                name=player_name,
+                reader=reader,
+                writer=writer,
+                user_id=authenticated_user.get("id"),
+            )
+            if session_key:
+                self.active_sessions[session_key] = player
+
             room = self.lobby.get_or_create_available_room()
             logger.info(f"[LOBBY] Jugador '{player_name}' ({addr}) asignado a Sala #{room.room_id}")
             added = await room.add_player(player)
@@ -124,8 +240,6 @@ class ScrabbleServer:
             if not added:
                 logger.warning(f"[LOBBY] No se pudo unir a '{player_name}' a la Sala #{room.room_id}")
                 await send_json(writer, {"event": "error", "message": "No se pudo unir a la sala disponible."})
-                writer.close()
-                await writer.wait_closed()
                 return
 
             # 3. Bucle único de lectura de red para este cliente durante toda su sesión
@@ -163,6 +277,9 @@ class ScrabbleServer:
         except Exception as e:
             logger.error(f"[ERROR] Conexión con {addr}: {e}")
         finally:
+            if session_key and session_key in self.active_sessions:
+                del self.active_sessions[session_key]
+                logger.info(f"[AUTH] Sesión liberada para '{session_key}'")
             if room is not None and player is not None and room.state in ("WAITING", "STARTING") and player in room.players:
                 try:
                     await room.remove_player(player)
