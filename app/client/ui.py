@@ -80,3 +80,56 @@ def render_menu():
     menu_table.add_row("[4]", "Pasar turno")
     menu_table.add_row("[5]", "Terminar juego")
     console.print(menu_table)
+
+
+def render_welcome_menu():
+    """Menú interactivo de bienvenida y autenticación."""
+    menu_table = Table(
+        box=box.SQUARE,
+        title="SCRABBLE EN RED - ACCESO",
+        title_style="bold cyan",
+        show_header=False,
+        padding=(0, 2),
+    )
+    menu_table.add_column("Opcion", style="bold yellow", width=6)
+    menu_table.add_column("Accion", style="white")
+    menu_table.add_row("[1]", "Iniciar Sesión (Login)")
+    menu_table.add_row("[2]", "Registrarse (Crear nueva cuenta)")
+    menu_table.add_row("[3]", "Ver Ranking Histórico")
+    menu_table.add_row("[4]", "Jugar como Invitado")
+    menu_table.add_row("[5]", "Salir")
+    console.print(menu_table)
+
+
+def render_ranking(ranking_data: list):
+    """Tabla de posiciones histórica en la terminal."""
+    if not ranking_data:
+        console.print(Panel("[yellow]Aún no hay registros en el ranking histórico.[/yellow]", box=box.SQUARE))
+        return
+
+    table = Table(
+        box=box.SQUARE,
+        title="RANKING HISTORICO DE JUGADORES",
+        title_style="bold yellow",
+        header_style="bold cyan",
+        padding=(0, 2),
+    )
+    table.add_column("Pos.", justify="center", style="bold yellow", width=6)
+    table.add_column("Jugador", style="bold white", width=16)
+    table.add_column("Victorias", justify="center", style="bold green", width=11)
+    table.add_column("Partidas", justify="center", style="white", width=10)
+    table.add_column("Efectividad", justify="center", style="magenta", width=13)
+    table.add_column("Mejor Puntaje", justify="center", style="bold cyan", width=15)
+    table.add_column("Promedio", justify="center", style="blue", width=11)
+
+    for item in ranking_data:
+        rank = item.get("rank", "-")
+        user = item.get("username", "Anon")
+        wins = str(item.get("wins", 0))
+        games = str(item.get("games_played", 0))
+        rate = f"{item.get('win_rate', 0.0)}%"
+        best = f"{item.get('best_score', 0)} pts"
+        avg = f"{item.get('avg_score', 0.0)} pts"
+        table.add_row(str(rank), user, wins, games, rate, best, avg)
+
+    console.print(table)
