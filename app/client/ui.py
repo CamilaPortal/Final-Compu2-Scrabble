@@ -93,10 +93,10 @@ def render_welcome_menu():
     )
     menu_table.add_column("Opcion", style="bold yellow", width=6)
     menu_table.add_column("Accion", style="white")
-    menu_table.add_row("[1]", "Iniciar Sesión (Login)")
+    menu_table.add_row("[1]", "Iniciar sesión (Login)")
     menu_table.add_row("[2]", "Registrarse (Crear nueva cuenta)")
-    menu_table.add_row("[3]", "Ver Ranking Histórico")
-    menu_table.add_row("[4]", "Jugar como Invitado")
+    menu_table.add_row("[3]", "Ver ranking histórico")
+    menu_table.add_row("[4]", "Jugar como invitado")
     menu_table.add_row("[5]", "Salir")
     console.print(menu_table)
 

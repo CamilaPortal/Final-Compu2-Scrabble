@@ -1,0 +1,75 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: scrabble_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scrabble_user
+      POSTGRES_PASSWORD: scrabble_password
+      POSTGRES_DB: scrabble_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scrabble_user -d scrabble_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scrabble_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: scrabble_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scrabble_network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scrabble_worker
+    restart: unless-stopped
+    command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - C_FORCE_ROOT=true
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - scrabble_network
+
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scrabble_server
+    restart: unless-stopped
+    command: ["python3", "-m", "server.server", "--host", "0.0.0.0", "--port", "5000"]
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://scrabble_user:scrabble_password@db:5432/scrabble_db
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    networks:
+      - scrabble_network
+
+volumes:
+  postgres_data:
+
+networks:
+  scrabble_network:
+    driver: bridge
