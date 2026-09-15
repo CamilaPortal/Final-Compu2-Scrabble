@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from typing import Generator
 
 from sqlalchemy import create_engine
@@ -7,8 +6,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from database.models import Base
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "scrabble.db"
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./scrabble.db")
 
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
