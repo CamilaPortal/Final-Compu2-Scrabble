@@ -8,6 +8,7 @@ WORKDIR /app
 
 # Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    net-tools \
     curl \
     procps \
     psmisc \
