@@ -12,9 +12,9 @@ from database import (
     init_db,
     register_user,
     authenticate_user,
-    save_finished_game,
     get_top_players,
 )
+from tasks.game_tasks import save_finished_game_task
 from server.logger import logger
 from server.lobby import LobbyManager, Room
 from server.player_connection import ConnectedPlayer
@@ -75,20 +75,21 @@ class ScrabbleServer:
                 if data.get("event") == "game_over":
                     finished_at = datetime.now()
                     duration_seconds = max(1, int((finished_at - started_at).total_seconds()))
+                    final_scores = data.get("final_scores", {})
+                    winners = data.get("winners", [])
                     try:
-                        await asyncio.to_thread(
-                            save_finished_game,
+                        save_finished_game_task.delay(
                             room.room_id,
-                            started_at,
-                            finished_at,
+                            started_at.isoformat(),
+                            finished_at.isoformat(),
                             duration_seconds,
                             players_data,
-                            data.get("final_scores", {}),
-                            data.get("winners", []),
+                            final_scores,
+                            winners,
                         )
-                        logger.info(f"[SALA #{room.room_id}] Partida guardada exitosamente en la base de datos.")
-                    except Exception as dbe:
-                        logger.error(f"[SALA #{room.room_id}] Error al guardar partida en base de datos: {dbe}")
+                        logger.info(f"[SALA #{room.room_id}] Tarea de persistencia encolada exitosamente en Celery.")
+                    except Exception as ce:
+                        logger.error(f"[SALA #{room.room_id}] Error al encolar tarea de persistencia en Celery: {ce}")
 
                 if target == "internal" and data.get("event") == "room_finished":
                     break

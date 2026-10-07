@@ -38,9 +38,12 @@ services:
     command: ["celery", "-A", "tasks.celery_app", "worker", "--loglevel=info"]
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://scrabble_user:scrabble_password@db:5432/scrabble_db
       - C_FORCE_ROOT=true
     depends_on:
       redis:
+        condition: service_healthy
+      db:
         condition: service_healthy
     networks:
       - scrabble_network
