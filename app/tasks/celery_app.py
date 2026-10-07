@@ -7,7 +7,7 @@ celery_app = Celery(
     "scrabble_tasks",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["tasks.word_tasks"],
+    include=["tasks.word_tasks", "tasks.game_tasks"],
 )
 
 celery_app.conf.update(
