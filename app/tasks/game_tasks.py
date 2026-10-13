@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Any, Dict, List
 from tasks.celery_app import celery_app
 from database.repository import save_finished_game
-from server.logger import logger
+from celery.utils.log import get_task_logger
+
+logger = get_task_logger(__name__)
 
 
 @celery_app.task(

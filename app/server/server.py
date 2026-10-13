@@ -22,7 +22,7 @@ from server.room_process import run_room_process
 from server.protocol import recv_json, send_json
 
 class ScrabbleServer:
-    def __init__(self, host: str = "0.0.0.0", port: int = 5000):
+    def __init__(self, host: str = "::", port: int = 5000):
         self.host = host
         self.port = port
         init_db()
@@ -293,18 +293,28 @@ class ScrabbleServer:
                 pass
 
     async def run(self):
-        server = await asyncio.start_server(
-            self.handle_client,
-            self.host,
-            self.port,
-            family=socket.AF_INET,
-            reuse_address=True
-        )
+        # Configuración dual-stack: escuchar en IPv4 e IPv6
+        try:
+            server = await asyncio.start_server(
+                self.handle_client,
+                host=["::", "0.0.0.0"],
+                port=self.port,
+                reuse_address=True
+            )
+        except Exception as e:
+            logger.warning(f"[SERVIDOR] No se pudo enlazar socket dual IPv6/IPv4 ({e}). Enlazando solo IPv4...")
+            server = await asyncio.start_server(
+                self.handle_client,
+                host="0.0.0.0",
+                port=self.port,
+                reuse_address=True
+            )
+
         addrs = ", ".join(str(sock.getsockname()) for sock in server.sockets)
         logger.info(f"==================================================")
         logger.info(f"  SERVIDOR SCRABBLE ASYNCIO INICIADO")
         logger.info(f"  Escuchando en: {addrs}")
-        logger.info(f"  Salas dinámicas (2-4 jugadores, temporizador 30s)")
+        logger.info(f"  Salas dinámicas (2-4 jugadores, temporizador 60s)")
         logger.info(f"==================================================")
 
         try:
@@ -318,7 +328,7 @@ class ScrabbleServer:
 
 def main():
     parser = argparse.ArgumentParser(description="Servidor de Scrabble Multijugador Asyncio")
-    parser.add_argument("--host", default="0.0.0.0", help="Dirección IP de escucha (default: 0.0.0.0)")
+    parser.add_argument("--host", default="::", help="Dirección IP de escucha (default: :: [Dual-Stack IPv4 e IPv6])")
     parser.add_argument("--port", type=int, default=5000, help="Puerto de escucha (default: 5000)")
     args = parser.parse_args()
 

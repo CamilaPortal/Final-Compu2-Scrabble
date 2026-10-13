@@ -28,4 +28,4 @@ USER appuser
 
 EXPOSE 5000
 
-CMD ["python3", "-m", "server.server", "--host", "0.0.0.0", "--port", "5000"]
+CMD ["python3", "-m", "server.server", "--port", "5000"]
